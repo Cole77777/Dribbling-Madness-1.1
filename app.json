@@ -33,7 +33,10 @@
       "versionCode": 1
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "build": {
+        "basePath": "/Dribbling-Madness-1.1/"
+      }
     },
     "plugins": [
       "expo-asset",
