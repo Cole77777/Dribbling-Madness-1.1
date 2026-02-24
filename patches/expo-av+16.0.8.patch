@@ -1,0 +1,23 @@
+diff --git a/node_modules/expo-av/ios/EXAV/Video/VideoViewModule.swift b/node_modules/expo-av/ios/EXAV/Video/VideoViewModule.swift
+index 4ddc324..405d30a 100644
+--- a/node_modules/expo-av/ios/EXAV/Video/VideoViewModule.swift
++++ b/node_modules/expo-av/ios/EXAV/Video/VideoViewModule.swift
+@@ -7,10 +7,14 @@ public final class VideoViewModule: Module {
+   public func definition() -> ModuleDefinition {
+     Name("ExpoVideoView")
+ 
+-    Constant("ScaleNone") { AVLayerVideoGravity.resizeAspect.rawValue }
+-    Constant("ScaleToFill") { AVLayerVideoGravity.resize.rawValue }
+-    Constant("ScaleAspectFit") { AVLayerVideoGravity.resizeAspect.rawValue }
+-    Constant("ScaleAspectFill") { AVLayerVideoGravity.resizeAspectFill.rawValue }
++    Constants {
++      [
++        "ScaleNone": AVLayerVideoGravity.resizeAspect.rawValue,
++        "ScaleToFill": AVLayerVideoGravity.resize.rawValue,
++        "ScaleAspectFit": AVLayerVideoGravity.resizeAspect.rawValue,
++        "ScaleAspectFill": AVLayerVideoGravity.resizeAspectFill.rawValue
++      ]
++    }
+ 
+     AsyncFunction("setFullscreen") { (viewTag: Int, value: Bool, promise: Promise) in
+       self.runBlockForView(viewTag) { view in

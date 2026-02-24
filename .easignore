@@ -1,0 +1,3 @@
+# So EAS Build runs prebuild and the withIosAppIcon plugin can add the full icon set and CFBundleIconName.
+# Without this, EAS uses your committed ios/ and skips prebuild, so the plugin never runs.
+/ios

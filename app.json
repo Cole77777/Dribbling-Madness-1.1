@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Dribbling Madness",
+    "slug": "dribbling-madness",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "dribblingmadness",
+    "primaryColor": "#FF8C00",
+    "description": "Click the basketball to earn points, unlock balls and upgrades, answer trivia at milestones, and rebirth for long-term progress. No account required.",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0F"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dribblingmadness.app",
+      "buildNumber": "3",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "icon": "./assets/icon.png",
+      "backgroundColor": "#0A0A0F"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0A0F"
+      },
+      "package": "com.dribblingmadness.app",
+      "versionCode": 1
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-asset",
+      "./plugins/withIosAppIcon.js"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "11a90041-7660-416e-bdae-acec8361d186"
+      }
+    }
+  }
+}
