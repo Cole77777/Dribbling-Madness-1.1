@@ -1,16 +1,16 @@
 /**
  * Game data: balls, click/auto upgrades, AP upgrades, levels, trivia, rebirth scaling.
  */
-/** Balls: cost in AP (apCost); minRebirths gates unlock. */
+/** Balls: cost in AP (apCost); minRebirths gates unlock. theme = full-screen gradient + accent when this ball is selected. */
 export const BALLS = {
-  orange:  { id: 'orange',  name: 'Classic', color: '#FF8C00', multiplier: 1,  apCost: 0,    minRebirths: 0 },
-  blue:    { id: 'blue',    name: 'Cool Blue', color: '#4A90D9', multiplier: 2,  apCost: 30,   minRebirths: 0 },
-  red:     { id: 'red',     name: 'Fire', color: '#E53935', multiplier: 3,  apCost: 80,   minRebirths: 0 },
-  gold:    { id: 'gold',    name: 'Gold', color: '#FFD700', multiplier: 5,  apCost: 200,  minRebirths: 0 },
-  green:   { id: 'green',   name: 'Court', color: '#2E7D32', multiplier: 8,  apCost: 500,  minRebirths: 0 },
-  purple:  { id: 'purple',  name: 'Royal', color: '#7B1FA2', multiplier: 12, apCost: 1200, minRebirths: 1 },
-  black:   { id: 'black',   name: 'Elite', color: '#212121', multiplier: 20, apCost: 3500, minRebirths: 2 },
-  rainbow: { id: 'rainbow', name: 'Legend', color: '#E040FB', multiplier: 35, apCost: 10000, minRebirths: 3 },
+  orange:  { id: 'orange',  name: 'Classic', color: '#FF8C00', multiplier: 1,  apCost: 0,    minRebirths: 0, theme: { gradient: ['#1a0f0a', '#0f0a08'], accent: '#FF8C00' } },
+  blue:    { id: 'blue',    name: 'Cool Blue', color: '#4A90D9', multiplier: 2,  apCost: 30,   minRebirths: 0, theme: { gradient: ['#0a0f1a', '#0a1424'], accent: '#4A90D9' } },
+  red:     { id: 'red',     name: 'Fire', color: '#E53935', multiplier: 3,  apCost: 80,   minRebirths: 0, theme: { gradient: ['#1a0a0a', '#240a0a'], accent: '#E53935' } },
+  gold:    { id: 'gold',    name: 'Gold', color: '#FFD700', multiplier: 5,  apCost: 200,  minRebirths: 0, theme: { gradient: ['#1a1810', '#141008'], accent: '#FFD700' } },
+  green:   { id: 'green',   name: 'Court', color: '#2E7D32', multiplier: 8,  apCost: 500,  minRebirths: 0, theme: { gradient: ['#0a1a0f', '#0a1a12'], accent: '#2E7D32' } },
+  purple:  { id: 'purple',  name: 'Royal', color: '#7B1FA2', multiplier: 12, apCost: 1200, minRebirths: 1, theme: { gradient: ['#120a1a', '#0f0815'], accent: '#7B1FA2' } },
+  black:   { id: 'black',   name: 'Elite', color: '#212121', multiplier: 20, apCost: 3500, minRebirths: 2, theme: { gradient: ['#0a0a0a', '#050508'], accent: '#424242' } },
+  rainbow: { id: 'rainbow', name: 'Legend', color: '#E040FB', multiplier: 35, apCost: 10000, minRebirths: 3, theme: { gradient: ['#1a0a18', '#140a1a'], accent: '#E040FB' } },
 };
 
 /** Rebirth: each rebirth increases point costs by this much (additive). 0.12 = +12% per rebirth. */
@@ -68,10 +68,16 @@ export function getRebirthCost(rebirths) {
   return Math.floor(REBIRTH_COST_BASE * Math.pow(REBIRTH_COST_MULT, rebirths ?? 0));
 }
 
+/** Run score milestones for late-game celebration toasts (e.g. 1M, 10M run). */
+export const RUN_MILESTONES = [1e6, 10e6, 100e6, 1e9];
+
 /** Score thresholds that trigger one trivia. Extended for long progression. */
 export const TRIVIA_MILESTONES = [
   10e3, 25e3, 50e3, 100e3, 250e3, 500e3, 1e6, 2e6, 5e6, 10e6, 25e6, 50e6, 100e6, 250e6, 500e6, 1e9,
 ];
+
+/** Facts modal: show one basketball fact every this many ms (e.g. 60 seconds). Not trivia — trivia is only at score milestones. */
+export const FACT_INTERVAL_MS = 60_000;
 
 /** Base rewards for first trivia (index 0); later milestones scale up. */
 export const TRIVIA_REWARD_PTS_BASE = 2000;

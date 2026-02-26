@@ -8,7 +8,7 @@
     "userInterfaceStyle": "dark",
     "scheme": "dribblingmadness",
     "primaryColor": "#FF8C00",
-    "description": "Click the basketball to earn points, unlock balls and upgrades, answer trivia at milestones, and rebirth for long-term progress. No account required.",
+    "description": "Basketball trivia at milestones, facts every minute. Tap to earn points, unlock balls, daily challenges, rebirth. No account, no ads.",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -17,12 +17,16 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dribblingmadness.app",
-      "buildNumber": "3",
+      "buildNumber": "15",
       "config": {
         "usesNonExemptEncryption": false
       },
       "icon": "./assets/icon.png",
-      "backgroundColor": "#0A0A0F"
+      "backgroundColor": "#0A0A0F",
+      "infoPlist": {
+        "UIRequiresFullScreen": true,
+        "UISupportedInterfaceOrientations": ["UIInterfaceOrientationPortrait"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -30,7 +34,7 @@
         "backgroundColor": "#0A0A0F"
       },
       "package": "com.dribblingmadness.app",
-      "versionCode": 1
+      "versionCode": 15
     },
     "web": {
       "favicon": "./assets/favicon.png",

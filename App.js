@@ -26,17 +26,19 @@ import {
   REBIRTH_COST_MULT_PER,
   REBIRTH_BOOST_PER,
   TRIVIA_MILESTONES,
+  FACT_INTERVAL_MS,
+  RUN_MILESTONES,
   getTriviaRewardPts,
   getTriviaRewardAP,
-  TRIVIA_FIRST_AT,
   STORAGE_KEY,
   LEVEL_THRESHOLDS,
   LEVEL_NAMES,
   PRESTIGE_UPGRADES,
 } from './src/constants/gameData.js';
 import { ACHIEVEMENTS } from './src/constants/achievements.js';
-import { ALL_CHALLENGES, getTodayDateString, getWeekStartDateString } from './src/constants/challenges.js';
+import { ALL_CHALLENGES, getTodayDateString, getWeekStartDateString, getActiveDailyChallenges, getActiveWeeklyChallenges } from './src/constants/challenges.js';
 import { TRIVIA_QUESTIONS } from './src/constants/trivia.js';
+import { BASKETBALL_TIPS } from './src/constants/tips.js';
 import { formatNumber } from './src/utils/formatNumber.js';
 import { initSound, playTap, playAchievement } from './src/utils/sound.js';
 
@@ -64,6 +66,7 @@ function initialState() {
     boughtApUpgrades: [],
     boughtPrestigeUpgrades: [],
     triviaMilestonesDone: [],
+    triviaAskedThisRun: [],
     settings: { haptic: true, animations: true, sound: false },
     clicksIn10s: 0,
     loginStreak: 0,
@@ -75,12 +78,18 @@ function initialState() {
     currentTrivia: null,
     triviaSelected: null,
     triviaSubmitted: false,
+    triviaRewardIndex: 0,
+    didYouKnowIndex: 0,
     newAchievementPopups: [],
     challengeLastDailyReset: null,
     challengeLastWeeklyReset: null,
     challengeDaySnapshot: null,
     challengeWeekSnapshot: null,
     challengeClaimed: {},
+    runMilestoneToast: null,
+    runMilestonesCelebrated: [],
+    showHelpModal: false,
+    helpSeenOnce: false,
   };
 }
 
@@ -176,7 +185,11 @@ function Game() {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (c || !raw) return;
+        if (c) return;
+        if (!raw) {
+          setState(prev => ({ ...prev, showHelpModal: true }));
+          return;
+        }
         const d = JSON.parse(raw);
         if (d?.state && typeof d.state.score === 'number') {
           const loaded = d.state;
@@ -196,6 +209,7 @@ function Game() {
             boughtApUpgrades: Array.isArray(loaded.boughtApUpgrades) ? loaded.boughtApUpgrades : [],
             boughtPrestigeUpgrades: Array.isArray(loaded.boughtPrestigeUpgrades) ? loaded.boughtPrestigeUpgrades : [],
             triviaMilestonesDone: Array.isArray(loaded.triviaMilestonesDone) ? loaded.triviaMilestonesDone : [],
+            triviaAskedThisRun: Array.isArray(loaded.triviaAskedThisRun) ? loaded.triviaAskedThisRun : [],
             settings: {
               haptic: loaded.settings?.haptic !== false,
               animations: loaded.settings?.animations !== false,
@@ -207,12 +221,18 @@ function Game() {
             triviaAnswered: typeof loaded.triviaAnswered === 'number' ? loaded.triviaAnswered : prev.triviaAnswered,
             triviaCorrect: typeof loaded.triviaCorrect === 'number' ? loaded.triviaCorrect : prev.triviaCorrect,
             newAchievementPopups: [],
+            showTrivia: false,
+            currentTrivia: null,
             challengeLastDailyReset: loaded.challengeLastDailyReset ?? prev.challengeLastDailyReset,
             challengeLastWeeklyReset: loaded.challengeLastWeeklyReset ?? prev.challengeLastWeeklyReset,
             challengeDaySnapshot: loaded.challengeDaySnapshot ?? prev.challengeDaySnapshot,
             challengeWeekSnapshot: loaded.challengeWeekSnapshot ?? prev.challengeWeekSnapshot,
             challengeClaimed: loaded.challengeClaimed && typeof loaded.challengeClaimed === 'object' ? loaded.challengeClaimed : prev.challengeClaimed,
+            runMilestonesCelebrated: Array.isArray(loaded.runMilestonesCelebrated) ? loaded.runMilestonesCelebrated : [],
+            helpSeenOnce: loaded.helpSeenOnce === true,
           }));
+        } else {
+          setState(prev => ({ ...prev, showHelpModal: true }));
         }
         const today = new Date().toDateString();
         setState(prev => {
@@ -242,7 +262,7 @@ function Game() {
       }
       if (needWeekly) {
         next.challengeLastWeeklyReset = weekStart;
-        next.challengeWeekSnapshot = { rebirths: prev.rebirths, totalClicks: prev.totalClicks, triviaCorrect: prev.triviaCorrect };
+        next.challengeWeekSnapshot = { rebirths: prev.rebirths, totalClicks: prev.totalClicks, triviaCorrect: prev.triviaCorrect, totalScore: prev.totalScore };
         ALL_CHALLENGES.filter(c => c.period === 'weekly').forEach(c => delete next.challengeClaimed[c.id]);
       }
       return next;
@@ -293,11 +313,25 @@ function Game() {
           totalScore: prev.totalScore + gain,
         };
         if (nextMilestone != null && !prev.showTrivia && Array.isArray(TRIVIA_QUESTIONS) && TRIVIA_QUESTIONS.length > 0) {
-          next.showTrivia = true;
-          next.currentTrivia = TRIVIA_QUESTIONS[Math.floor(Math.random() * TRIVIA_QUESTIONS.length)];
-          next.triviaSelected = null;
-          next.triviaSubmitted = false;
-          next.triviaMilestonesDone = [...done, nextMilestone];
+          const asked = prev.triviaAskedThisRun || [];
+          const indices = TRIVIA_QUESTIONS.map((_, i) => i);
+          const unasked = indices.filter(i => !asked.includes(i));
+          if (unasked.length > 0) {
+            const idx = unasked[Math.floor(Math.random() * unasked.length)];
+            next.showTrivia = true;
+            next.currentTrivia = TRIVIA_QUESTIONS[idx];
+            next.triviaSelected = null;
+            next.triviaSubmitted = false;
+            next.triviaMilestonesDone = [...done, nextMilestone];
+            next.triviaAskedThisRun = [...asked, idx];
+            next.triviaRewardIndex = done.length;
+          }
+        }
+        const celebrated = prev.runMilestonesCelebrated || [];
+        const crossed = RUN_MILESTONES.find(M => prev.score < M && newScore >= M && !celebrated.includes(M));
+        if (crossed != null) {
+          next.runMilestoneToast = formatNumber(crossed) + ' run!';
+          next.runMilestonesCelebrated = [...celebrated, crossed];
         }
         return next;
       });
@@ -349,11 +383,25 @@ function Game() {
       const done = prev.triviaMilestonesDone || [];
       const nextMilestone = TRIVIA_MILESTONES.find(M => next.score >= M && !done.includes(M));
       if (nextMilestone != null && !prev.showTrivia && Array.isArray(TRIVIA_QUESTIONS) && TRIVIA_QUESTIONS.length > 0) {
-        next.showTrivia = true;
-        next.currentTrivia = TRIVIA_QUESTIONS[Math.floor(Math.random() * TRIVIA_QUESTIONS.length)];
-        next.triviaSelected = null;
-        next.triviaSubmitted = false;
-        next.triviaMilestonesDone = [...done, nextMilestone];
+        const asked = prev.triviaAskedThisRun || [];
+        const indices = TRIVIA_QUESTIONS.map((_, i) => i);
+        const unasked = indices.filter(i => !asked.includes(i));
+        if (unasked.length > 0) {
+          const idx = unasked[Math.floor(Math.random() * unasked.length)];
+          next.showTrivia = true;
+          next.currentTrivia = TRIVIA_QUESTIONS[idx];
+          next.triviaSelected = null;
+          next.triviaSubmitted = false;
+          next.triviaMilestonesDone = [...done, nextMilestone];
+          next.triviaAskedThisRun = [...asked, idx];
+          next.triviaRewardIndex = done.length;
+        }
+      }
+      const celebrated = prev.runMilestonesCelebrated || [];
+      const crossed = RUN_MILESTONES.find(M => prev.score < M && next.score >= M && !celebrated.includes(M));
+      if (crossed != null) {
+        next.runMilestoneToast = formatNumber(crossed) + ' run!';
+        next.runMilestonesCelebrated = [...celebrated, crossed];
       }
       return next;
     });
@@ -373,23 +421,21 @@ function Game() {
   const submitTrivia = useCallback(() => {
     if (state.triviaSelected == null || !state.currentTrivia) return;
     const ok = state.triviaSelected === state.currentTrivia.correct;
-    setState(prev => {
-      const milestoneIndex = Math.max(0, (prev.triviaMilestonesDone?.length ?? 1) - 1);
-      const pts = ok ? getTriviaRewardPts(milestoneIndex) : 0;
-      const ap = ok ? getTriviaRewardAP(milestoneIndex) : 0;
-      return {
-        ...prev,
-        triviaSubmitted: true,
-        triviaAnswered: prev.triviaAnswered + 1,
-        triviaCorrect: ok ? prev.triviaCorrect + 1 : prev.triviaCorrect,
-        score: prev.score + pts,
-        ap: prev.ap + ap,
-      };
-    });
-  }, [state.triviaSelected, state.currentTrivia]);
+    const rewardIndex = state.triviaRewardIndex ?? 0;
+    const pts = ok ? getTriviaRewardPts(rewardIndex) : 0;
+    const ap = ok ? getTriviaRewardAP(rewardIndex) : 0;
+    setState(prev => ({
+      ...prev,
+      triviaSubmitted: true,
+      triviaAnswered: prev.triviaAnswered + 1,
+      triviaCorrect: ok ? prev.triviaCorrect + 1 : prev.triviaCorrect,
+      score: prev.score + pts,
+      ap: prev.ap + ap,
+    }));
+  }, [state.triviaSelected, state.currentTrivia, state.triviaRewardIndex]);
 
   const closeTrivia = useCallback(() => {
-    setState(prev => ({ ...prev, showTrivia: false, currentTrivia: null, triviaSelected: null, triviaSubmitted: false }));
+    setState(prev => ({ ...prev, showTrivia: false, currentTrivia: null, triviaSelected: null, triviaSubmitted: false, triviaRewardIndex: 0 }));
   }, []);
 
   const rebirthCost = getRebirthCost(state.rebirths);
@@ -407,6 +453,11 @@ function Game() {
       currentTrivia: null,
       triviaSelected: null,
       triviaSubmitted: false,
+      triviaRewardIndex: 0,
+      triviaMilestonesDone: [],
+      triviaAskedThisRun: [],
+      runMilestoneToast: null,
+      runMilestonesCelebrated: [],
     }));
   }, [state.score, state.rebirths]);
 
@@ -489,6 +540,7 @@ function Game() {
   };
 
   function getChallengeProgress(c) {
+    if (c.type === 'run_score') return state.score;
     const snap = c.period === 'daily' ? state.challengeDaySnapshot : state.challengeWeekSnapshot;
     if (!snap) return 0;
     switch (c.type) {
@@ -496,6 +548,7 @@ function Game() {
       case 'score_today': return Math.max(0, state.totalScore - (snap.totalScore ?? 0));
       case 'trivia_today': return Math.max(0, state.triviaCorrect - (snap.triviaCorrect ?? 0));
       case 'clicks_week': return Math.max(0, state.totalClicks - (snap.totalClicks ?? 0));
+      case 'score_week': return Math.max(0, state.totalScore - (snap.totalScore ?? 0));
       case 'rebirths_week': return Math.max(0, state.rebirths - (snap.rebirths ?? 0));
       case 'trivia_week': return Math.max(0, state.triviaCorrect - (snap.triviaCorrect ?? 0));
       default: return 0;
@@ -505,17 +558,22 @@ function Game() {
   const claimChallenge = useCallback((c) => {
     setState(prev => {
       if (prev.challengeClaimed[c.id]) return prev;
-      const snap = c.period === 'daily' ? prev.challengeDaySnapshot : prev.challengeWeekSnapshot;
-      if (!snap) return prev;
       let prog = 0;
-      switch (c.type) {
-        case 'clicks_today': prog = prev.totalClicks - (snap.totalClicks ?? 0); break;
-        case 'score_today': prog = prev.totalScore - (snap.totalScore ?? 0); break;
-        case 'trivia_today': prog = prev.triviaCorrect - (snap.triviaCorrect ?? 0); break;
-        case 'clicks_week': prog = prev.totalClicks - (snap.totalClicks ?? 0); break;
-        case 'rebirths_week': prog = prev.rebirths - (snap.rebirths ?? 0); break;
-        case 'trivia_week': prog = prev.triviaCorrect - (snap.triviaCorrect ?? 0); break;
-        default: break;
+      if (c.type === 'run_score') {
+        prog = prev.score;
+      } else {
+        const snap = c.period === 'daily' ? prev.challengeDaySnapshot : prev.challengeWeekSnapshot;
+        if (!snap) return prev;
+        switch (c.type) {
+          case 'clicks_today': prog = prev.totalClicks - (snap.totalClicks ?? 0); break;
+          case 'score_today': prog = prev.totalScore - (snap.totalScore ?? 0); break;
+          case 'trivia_today': prog = prev.triviaCorrect - (snap.triviaCorrect ?? 0); break;
+          case 'clicks_week': prog = prev.totalClicks - (snap.totalClicks ?? 0); break;
+          case 'score_week': prog = prev.totalScore - (snap.totalScore ?? 0); break;
+          case 'rebirths_week': prog = prev.rebirths - (snap.rebirths ?? 0); break;
+          case 'trivia_week': prog = prev.triviaCorrect - (snap.triviaCorrect ?? 0); break;
+          default: break;
+        }
       }
       if (prog < c.requirement) return prev;
       if (prev.settings.haptic) hapticAchievement();
@@ -528,7 +586,9 @@ function Game() {
     });
   }, []);
 
-  const hasClaimableChallenge = ALL_CHALLENGES.some(c => !state.challengeClaimed[c.id] && getChallengeProgress(c) >= c.requirement);
+  const activeDailyChallenges = getActiveDailyChallenges(getTodayDateString());
+  const activeWeeklyChallenges = getActiveWeeklyChallenges(getWeekStartDateString(new Date()));
+  const hasClaimableChallenge = [...activeDailyChallenges, ...activeWeeklyChallenges].some(c => !state.challengeClaimed[c.id] && getChallengeProgress(c) >= c.requirement);
 
   const dismissAchievementPopup = useCallback(() => {
     if (!achievementCanDismiss) return;
@@ -569,6 +629,23 @@ function Game() {
   }, [currentAchievementForPopup?.id]);
 
   useEffect(() => {
+    if (!state.runMilestoneToast) return;
+    const t = setTimeout(() => setState(prev => ({ ...prev, runMilestoneToast: null })), 2500);
+    return () => clearTimeout(t);
+  }, [state.runMilestoneToast]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setState(prev => {
+        const len = Array.isArray(BASKETBALL_TIPS) ? BASKETBALL_TIPS.length : 0;
+        if (len === 0) return prev;
+        return { ...prev, didYouKnowIndex: (prev.didYouKnowIndex + 1) % len };
+      });
+    }, FACT_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     const activeIdx = TABS.findIndex(t => t.id === state.tab);
     if (activeIdx < 0) return;
     const anims = TABS.map((_, i) =>
@@ -602,7 +679,7 @@ function Game() {
         {state.triviaSubmitted && (
           <Text style={state.triviaSelected === state.currentTrivia.correct ? s.resultOk : s.resultBad}>
             {state.triviaSelected === state.currentTrivia.correct
-              ? `Correct! +${formatNumber(getTriviaRewardPts(Math.max(0, (state.triviaMilestonesDone?.length ?? 1) - 1)))} pts, +${getTriviaRewardAP(Math.max(0, (state.triviaMilestonesDone?.length ?? 1) - 1))} AP`
+              ? `Correct! +${formatNumber(getTriviaRewardPts(state.triviaRewardIndex ?? 0))} pts, +${getTriviaRewardAP(state.triviaRewardIndex ?? 0)} AP`
               : 'Wrong — better luck next time!'}
           </Text>
         )}
@@ -638,11 +715,16 @@ function Game() {
     </Animated.View>
   ) : null;
 
+  const playAccent = state.tab === 'play' && ball.theme?.accent ? ball.theme.accent : null;
+
   return (
     <SafeAreaProvider>
       <SafeAreaView style={s.container} edges={['top', 'bottom']}>
         <StatusBar style="light" />
-        <LinearGradient colors={[colors.background, colors.court]} style={s.gradient}>
+        <LinearGradient
+          colors={state.tab === 'play' && ball.theme?.gradient ? ball.theme.gradient : [colors.background, colors.court]}
+          style={s.gradient}
+        >
         <View style={s.header}>
           <View style={s.scoreCard}>
             <Text style={s.scoreLabel}>Score</Text>
@@ -652,6 +734,11 @@ function Game() {
             <Text style={s.scoreLabel}>AP</Text>
             <Text style={s.scoreValue}>{formatNumber(state.ap)}</Text>
           </View>
+          {levelIndex === 0 && (
+            <TouchableOpacity style={s.helpBtnOverlay} onPress={() => setState(prev => ({ ...prev, showHelpModal: true }))}>
+              <Text style={s.helpBtnText}>?</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={s.tabRow}>
@@ -675,16 +762,27 @@ function Game() {
             <View style={s.logoBlock}>
               <Text style={s.logoTitle}>Dribbling Madness</Text>
               <View style={s.levelRow}>
-                <Text style={s.levelBadgeText}>{levelName}</Text>
-                <Text style={s.triviaUnlockText}>Trivia at {formatNumber(TRIVIA_FIRST_AT)}+</Text>
+                <Text style={[s.levelBadgeText, playAccent && { color: playAccent }]}>{levelName}</Text>
+                <Text style={s.triviaUnlockText}>
+                  {(() => {
+                    const done = state.triviaMilestonesDone || [];
+                    const nextAt = TRIVIA_MILESTONES.find(M => !done.includes(M));
+                    return nextAt != null ? `Trivia at ${formatNumber(nextAt)}` : 'Trivia (next run)';
+                  })()}
+                </Text>
               </View>
             </View>
+            {state.runMilestoneToast ? (
+              <View style={[s.runMilestoneBanner, playAccent && { borderColor: playAccent, backgroundColor: playAccent + '33' }]}>
+                <Text style={[s.runMilestoneBannerText, playAccent && { color: playAccent }]}>🎉 {state.runMilestoneToast}</Text>
+              </View>
+            ) : null}
             <View style={s.ballZone}>
               {popups.map(p => (
                 <ScorePop key={p.id} value={p.value} onDone={() => removePopup(p.id)} />
               ))}
               <TouchableOpacity activeOpacity={1} onPress={onTap} style={s.ballTouch}>
-                <Animated.View style={[s.ballOuter, { transform: [{ scale }] }]}>
+                <Animated.View style={[s.ballOuter, { transform: [{ scale }] }, playAccent && { borderColor: playAccent }]}>
                   <View style={[s.ballInner, { backgroundColor: ball.color }]} />
                   <Text style={s.ballEmoji}>🏀</Text>
                 </Animated.View>
@@ -700,13 +798,20 @@ function Game() {
                 s.rebirthBtn,
                 state.score < rebirthCost && s.rebirthDisabled,
                 state.score >= rebirthCost && s.rebirthCanAfford,
+                state.score >= rebirthCost && playAccent && { borderColor: playAccent, backgroundColor: playAccent + '22', shadowColor: playAccent },
               ]}
               onPress={rebirth}
               disabled={state.score < rebirthCost}
             >
-              <Text style={[s.rebirthText, state.score >= rebirthCost && s.rebirthTextAfford]}>{state.score >= rebirthCost ? 'Rebirth ready!' : 'Rebirth'}</Text>
+              <Text style={[s.rebirthText, state.score >= rebirthCost && (playAccent ? { color: playAccent } : s.rebirthTextAfford)]}>{state.score >= rebirthCost ? 'Rebirth ready!' : 'Rebirth'}</Text>
               <Text style={[s.rebirthSub, state.score >= rebirthCost && s.rebirthSubAfford]}>{formatNumber(rebirthCost)} pts · +{Math.round((state.rebirths + 1) * REBIRTH_BOOST_PER * 100)}% score (permanent)</Text>
             </TouchableOpacity>
+            <View style={[s.didYouKnowBlock, playAccent && { borderLeftColor: playAccent }]}>
+              <Text style={[s.didYouKnowLabel, playAccent && { color: playAccent }]}>Did you know?</Text>
+              <Text style={s.didYouKnowText}>
+                {BASKETBALL_TIPS.length > 0 ? BASKETBALL_TIPS[state.didYouKnowIndex % BASKETBALL_TIPS.length] : ''}
+              </Text>
+            </View>
           </Animated.View>
         )}
 
@@ -799,8 +904,6 @@ function Game() {
               const apCost = b.apCost ?? 0;
               const lockedByRebirth = state.rebirths < minReb;
               const unlocked = state.unlockedBalls.includes(b.id);
-              const hasBetterBall = state.unlockedBalls.some(id => (BALLS[id]?.multiplier ?? 0) > b.multiplier);
-              const showsOwned = unlocked || hasBetterBall;
               const lockedByCost = !unlocked && state.ap < apCost;
               const locked = lockedByRebirth || lockedByCost;
               const canAfford = !lockedByRebirth && !unlocked && state.ap >= apCost;
@@ -810,7 +913,7 @@ function Game() {
                   style={[
                     s.card,
                     state.currentBall === b.id && s.cardActive,
-                    showsOwned && s.cardBought,
+                    unlocked && s.cardBought,
                     locked && s.cardLocked,
                     canAfford && s.cardCanAfford,
                   ]}
@@ -821,7 +924,7 @@ function Game() {
                   <View style={s.cardBody}>
                     <Text style={s.cardName}>{b.name}</Text>
                     <Text style={s.cardMeta}>
-                      {lockedByRebirth ? `Need ${minReb} rebirths` : apCost === 0 ? 'Free' : formatNumber(apCost) + ' AP'} · ×{b.multiplier}
+                      {lockedByRebirth ? `Need ${minReb} rebirths` : unlocked ? 'Owned · ×' + b.multiplier : (apCost === 0 ? 'Free' : formatNumber(apCost) + ' AP') + ' · ×' + b.multiplier}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -860,7 +963,7 @@ function Game() {
           <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
             <Text style={s.sectionTitle}>Daily</Text>
             <Text style={s.challengeSubtitle}>Resets at midnight</Text>
-            {ALL_CHALLENGES.filter(c => c.period === 'daily').map(c => {
+            {activeDailyChallenges.map(c => {
               const prog = getChallengeProgress(c);
               const done = prog >= c.requirement;
               const claimed = state.challengeClaimed[c.id];
@@ -885,7 +988,7 @@ function Game() {
             })}
             <Text style={[s.sectionTitle, { marginTop: spacing.xl }]}>Weekly</Text>
             <Text style={s.challengeSubtitle}>Resets Monday</Text>
-            {ALL_CHALLENGES.filter(c => c.period === 'weekly').map(c => {
+            {activeWeeklyChallenges.map(c => {
               const prog = getChallengeProgress(c);
               const done = prog >= c.requirement;
               const claimed = state.challengeClaimed[c.id];
@@ -954,13 +1057,36 @@ function Game() {
             <TouchableOpacity style={[s.card, s.dangerCard]} onPress={resetData}>
               <Text style={s.dangerText}>Reset all data</Text>
             </TouchableOpacity>
-            <Text style={s.helpText}>Rebirth costs score (reach the pts threshold); each rebirth costs more. You keep AP, balls, AP boosts, and rebirth count. Balls and Prestige cost AP. Click and Auto upgrades cost pts. Progress is saved on this device only.</Text>
+            <Text style={s.sectionTitle}>About this app</Text>
+            <View style={s.aboutBlock}>
+              <Text style={s.aboutBullet}>• 60+ basketball trivia questions at score milestones — no repeat until rebirth</Text>
+              <Text style={s.aboutBullet}>• Basketball facts every minute — did you know? (no repeat until rebirth)</Text>
+              <Text style={s.aboutBullet}>• 9 collectible balls — unlock with AP and boost your score multiplier</Text>
+              <Text style={s.aboutBullet}>• Daily & weekly challenges — earn bonus AP; resets at midnight and Monday</Text>
+              <Text style={s.aboutBullet}>• Rebirth progression — reset to grow stronger with permanent bonuses</Text>
+              <Text style={s.aboutBullet}>• Achievements & stats — track taps, trivia, rebirths, and more</Text>
+              <Text style={s.aboutBullet}>• No account required — progress saved on this device only</Text>
+            </View>
+            <Text style={s.helpText}>Rebirth costs score (reach the pts threshold); each rebirth costs more. You keep AP, AP boosts, rebirth count, and achievements. Balls reset to orange—buy them again with AP. Click and Auto upgrades cost pts. Progress is saved on this device only.</Text>
           </ScrollView>
           </Animated.View>
         )}
         </LinearGradient>
         {triviaModal}
         {achievementPopup}
+        {state.showHelpModal && (
+          <View style={s.modalOverlay} pointerEvents="auto">
+            <View style={s.modalCard}>
+              <Text style={s.helpModalTitle}>How it works</Text>
+              <Text style={s.helpModalBullet}>• <Text style={s.helpModalBold}>Points (pts)</Text> — Tap to earn. Spend on Click & Auto upgrades in Shop. Reset when you Rebirth.</Text>
+              <Text style={s.helpModalBullet}>• <Text style={s.helpModalBold}>AP</Text> — Earn from trivia and challenges. Spend on Balls and AP/Prestige upgrades. Kept when you Rebirth.</Text>
+              <Text style={s.helpModalBullet}>• <Text style={s.helpModalBold}>Rebirth</Text> — Resets score and point upgrades but gives a permanent score bonus. Do it when you hit the pts threshold to get stronger each run.</Text>
+              <TouchableOpacity style={[s.primaryBtn, { marginTop: spacing.lg }]} onPress={() => setState(prev => ({ ...prev, showHelpModal: false, helpSeenOnce: true }))}>
+                <Text style={s.primaryBtnText}>Got it</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -970,8 +1096,15 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
   gradient: { flex: 1 },
-  header: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.md },
+  header: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.md, alignItems: 'center', position: 'relative' },
   scoreCard: { flex: 1, backgroundColor: colors.surface, padding: spacing.lg, borderRadius: radius.md, alignItems: 'center' },
+  helpBtnOverlay: { position: 'absolute', top: spacing.lg, right: spacing.lg, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.35)', borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', zIndex: 10 },
+  helpBtnText: { ...typography.headline, color: colors.textMuted, fontSize: 16 },
+  runMilestoneBanner: { backgroundColor: colors.accentDim, paddingVertical: spacing.sm, paddingHorizontal: spacing.lg, marginHorizontal: spacing.lg, marginBottom: spacing.sm, borderRadius: radius.md, alignSelf: 'center', borderWidth: 1, borderColor: colors.accent },
+  runMilestoneBannerText: { ...typography.body, color: colors.accentBright, fontWeight: '700' },
+  helpModalTitle: { ...typography.title, color: colors.text, marginBottom: spacing.lg },
+  helpModalBullet: { ...typography.bodySmall, color: colors.textSecondary, marginBottom: spacing.md, lineHeight: 22 },
+  helpModalBold: { color: colors.text, fontWeight: '700' },
   scoreLabel: { ...typography.caption, color: colors.textMuted, marginBottom: 4 },
   scoreValue: { ...typography.score, color: colors.text },
   tabRow: { flexDirection: 'row', paddingHorizontal: spacing.sm, paddingVertical: spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border },
@@ -1005,6 +1138,9 @@ const s = StyleSheet.create({
   rebirthTextAfford: { color: colors.accentBright },
   rebirthSub: { ...typography.caption, color: colors.textMuted, marginTop: 4 },
   rebirthSubAfford: { color: colors.textSecondary },
+  didYouKnowBlock: { marginHorizontal: spacing.lg, marginBottom: spacing.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: radius.sm, borderLeftWidth: 3, borderLeftColor: colors.accent },
+  didYouKnowLabel: { ...typography.caption, color: colors.accent, marginBottom: 4, fontWeight: '700' },
+  didYouKnowText: { ...typography.bodySmall, color: colors.textSecondary, lineHeight: 18 },
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.lg, paddingBottom: 40 },
   sectionTitle: { ...typography.title, color: colors.text, marginBottom: spacing.md, marginTop: spacing.sm },
@@ -1031,6 +1167,8 @@ const s = StyleSheet.create({
   statValue: { ...typography.headline, color: colors.text },
   statLabel: { ...typography.caption, color: colors.textMuted, marginTop: 4 },
   helpText: { ...typography.bodySmall, color: colors.textMuted, marginTop: spacing.lg, lineHeight: 20 },
+  aboutBlock: { backgroundColor: colors.surface, padding: spacing.lg, borderRadius: radius.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
+  aboutBullet: { ...typography.bodySmall, color: colors.textSecondary, marginBottom: 6, lineHeight: 20 },
   dangerCard: { borderColor: colors.danger, backgroundColor: colors.dangerDim },
   dangerText: { ...typography.body, color: colors.danger },
   modalOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
